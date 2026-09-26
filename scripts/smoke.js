@@ -62,6 +62,56 @@ expect(
 const moved = Sweep.checkAll(needles, [circles[0], circles[1], { x: 600, y: 130, r: 10 }]);
 expect('移开保护圆后整体安全', moved.safe && moved.firstConflict === null);
 
+console.log('\n== 分步注胶烟测 ==');
+{
+  // 修复室录入：针1 在针2 附近扫掠；针2 的停驻姿态位于针1 扫掠路径中段
+  const swNeedles = [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 180, dir: 'ccw' },
+    { x: 0, y: 20, len: 5, a0: 270, a1: 0, dir: 'ccw' },
+  ];
+  const swCircles = [{ x: 500, y: 500, r: 5 }];
+  const limit = 6;
+
+  const swErrors = Sweep.validate(swNeedles, swCircles).concat(
+    Sweep.validateStepwise(swNeedles, { order: [0, 1], minNeedleClearance: limit })
+  );
+  expect('分步录入通过校验', swErrors.length === 0);
+
+  // 顺序 [针1 → 针2]：针1 扫掠中段与停驻的针2 越界（起止姿态净距均为 15 > 6）
+  const r1 = Sweep.checkStepwise(swNeedles, swCircles, { order: [0, 1], minNeedleClearance: limit });
+  const expectDeg = (Math.asin(289 / 300) * 180) / Math.PI;
+  expect('顺序 [针1→针2] 检出针间风险', !r1.needleSafe && !r1.safe);
+  expect(
+    '首项风险为第 1 步、停驻针 #2',
+    r1.firstNeedleConflict.step === 0 && r1.firstNeedleConflict.active === 0 && r1.firstNeedleConflict.parked === 1
+  );
+  expect('首次越界角 ≈ asin(289/300)（连续解）', approx(r1.firstNeedleConflict.angleDeg, expectDeg, 1e-6));
+  expect(
+    '越界发生在扫掠中段（起止姿态均安全）',
+    r1.firstNeedleConflict.offsetDeg > 1 && r1.firstNeedleConflict.offsetDeg < 179
+  );
+  expect('颜料圆校核结论在分步模式下保留', r1.circle.safe && r1.circle.results.length === 2);
+
+  // 修复师依据最早越界步骤与停驻针号调整顺序：[针2 → 针1] 后针间安全
+  const r2 = Sweep.checkStepwise(swNeedles, swCircles, { order: [1, 0], minNeedleClearance: limit });
+  expect('调整执行顺序后整体安全', r2.safe && r2.needleSafe);
+  expect(
+    '安全时列出第 1 步最小净距 15（停驻针 #1）',
+    approx(r2.steps[0].minClearance, 15) && r2.steps[0].minClearanceParked === 0
+  );
+  expect(
+    '安全时列出第 2 步最小净距 10（停驻针 #2）',
+    approx(r2.steps[1].minClearance, 10) && r2.steps[1].minClearanceParked === 1
+  );
+
+  // 端点接触/等于限值不得放行：换序后第 1 步净距恰为 15，限值取 15 即越界
+  const r3 = Sweep.checkStepwise(swNeedles, swCircles, { order: [1, 0], minNeedleClearance: 15 });
+  expect(
+    '净距等于限值判为越界（第 1 步起始位置）',
+    !r3.needleSafe && r3.firstNeedleConflict.step === 0 && approx(r3.firstNeedleConflict.offsetDeg, 0)
+  );
+}
+
 if (!ok) {
   console.error('烟测失败');
   process.exit(1);

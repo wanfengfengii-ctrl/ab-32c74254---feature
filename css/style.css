@@ -127,6 +127,68 @@ button.del {
   color: #8f1d1d;
 }
 #results .item { font-size: 12.5px; }
+#results .sub { margin-left: 14px; }
+#results .subhead {
+  background: none;
+  border: none;
+  padding: 4px 2px 2px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b6250;
+}
+
+/* 分步注胶：开关、净距与执行顺序拖动列表 */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.clearance-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #555;
+  margin-top: 10px;
+}
+.clearance-field input {
+  width: 90px;
+  padding: 3px 6px;
+  border: 1px solid #c9c2b2;
+  border-radius: 4px;
+  font-size: 13px;
+}
+#stepwise-config .hint {
+  margin: 8px 0 6px;
+}
+#order-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+#order-list li {
+  padding: 6px 10px;
+  border: 1px solid #c9c2b2;
+  border-radius: 5px;
+  margin-bottom: 5px;
+  background: #faf8f3;
+  cursor: grab;
+  font-size: 13px;
+  user-select: none;
+}
+#order-list li.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+#order-list li.drop-before {
+  box-shadow: 0 -2px 0 #1f77b4;
+}
+#order-list li.drop-after {
+  box-shadow: 0 2px 0 #1f77b4;
+}
 
 #canvas-wrap { flex: 1 1 auto; min-width: 400px; }
 #cv {

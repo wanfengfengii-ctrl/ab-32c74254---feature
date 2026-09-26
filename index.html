@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>壁画修复注胶 · 长针扫掠安全校核</h1>
-    <p>录入或拖动 2–5 根针与 1–6 个颜料保护圆，点击「校核」后仅在本机浏览器内完成全部几何计算，数据不会离开本机。</p>
+    <p>录入或拖动 2–5 根针与 1–6 个颜料保护圆，点击「校核」后仅在本机浏览器内完成全部几何计算，数据不会离开本机。可启用「分步注胶」拖动排定针的执行顺序，连续校核活动针与停驻针身的针间净距。</p>
   </header>
   <main>
     <section id="panel">
@@ -23,6 +23,24 @@
         <div id="circle-forms"></div>
         <button type="button" id="add-circle">＋ 添加保护圆</button>
       </div>
+      <div class="panel-block">
+        <h2>分步注胶</h2>
+        <label class="toggle">
+          <input type="checkbox" id="stepwise-enabled">
+          启用分步注胶（逐针执行）
+        </label>
+        <div id="stepwise-config" hidden>
+          <label class="clearance-field">
+            最小针间净距
+            <input type="number" id="min-clearance" step="any" min="0">
+          </label>
+          <p class="hint">
+            拖动排定 2–5 根针的执行顺序。每一步仅该针从起始角转至注入角；
+            已完成针停在注入角，未执行针保持起始角。
+          </p>
+          <ol id="order-list"></ol>
+        </div>
+      </div>
       <div class="panel-block actions">
         <button type="button" id="check" class="primary">校核</button>
         <button type="button" id="reset">重置</button>
@@ -34,7 +52,8 @@
       <canvas id="cv" width="760" height="560"></canvas>
       <p class="hint">
         可直接拖动：支点（圆点）、针尖手柄（改变角度与针长）、圆心、圆周（改变半径）。<br>
-        坐标原点在画布左下角，y 轴向上；角度以正东为 0°、逆时针为正。蓝色扇形为针身扫掠区域，红色为风险。
+        坐标原点在画布左下角，y 轴向上；角度以正东为 0°、逆时针为正。蓝色扇形为针身扫掠区域，红色为风险。<br>
+        启用分步注胶后，针标签显示执行步骤；针间首项风险会以橙色标出该步停驻针、红色标出活动针的越界姿态。
       </p>
     </section>
   </main>

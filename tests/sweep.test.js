@@ -163,6 +163,131 @@ console.log('== 首项冲突排序 ==');
   check('同针多圆取最早触及（起始角）', r.results[0].firstTouch.circle === 1 && approx(r.results[0].firstTouch.offsetDeg, 0));
 }
 
+console.log('== 分步注胶：录入校验 ==');
+{
+  const two = [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 90, dir: 'ccw' },
+    { x: 30, y: 0, len: 10, a0: 180, a1: 270, dir: 'ccw' },
+  ];
+  check(
+    '合法顺序与净距无错误',
+    Sweep.validateStepwise(two, { order: [1, 0], minNeedleClearance: 5 }).length === 0
+  );
+  check(
+    '净距为 0 允许（仅禁止接触）',
+    Sweep.validateStepwise(two, { order: [0, 1], minNeedleClearance: 0 }).length === 0
+  );
+  check(
+    '净距为负被拒',
+    Sweep.validateStepwise(two, { order: [0, 1], minNeedleClearance: -1 }).length > 0
+  );
+  check(
+    '净距非数值被拒',
+    Sweep.validateStepwise(two, { order: [0, 1], minNeedleClearance: NaN }).length > 0
+  );
+  check(
+    '顺序缺针被拒',
+    Sweep.validateStepwise(two, { order: [0], minNeedleClearance: 1 }).length > 0
+  );
+  check(
+    '顺序重复针被拒',
+    Sweep.validateStepwise(two, { order: [0, 0], minNeedleClearance: 1 }).length > 0
+  );
+  check(
+    '顺序含非法针号被拒',
+    Sweep.validateStepwise(two, { order: [0, 2], minNeedleClearance: 1 }).length > 0
+  );
+}
+
+console.log('== 分步注胶：连续针间净距 ==');
+{
+  const far = [{ x: 500, y: 500, r: 5 }];
+  // 两针安全场景：针1 (0,0) 长10 转 0°->90°；针2 (30,0) 长10 转 180°->270°
+  const sw = [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 90, dir: 'ccw' },
+    { x: 30, y: 0, len: 10, a0: 180, a1: 270, dir: 'ccw' },
+  ];
+  let r = Sweep.checkStepwise(sw, far, { order: [0, 1], minNeedleClearance: 1 });
+  check('安全顺序整体安全', r.safe && r.needleSafe && r.firstNeedleConflict === null);
+  check(
+    '第1步最小针间净距 = 10（相对停驻针 #2）',
+    approx(r.steps[0].minClearance, 10) && r.steps[0].minClearanceParked === 1
+  );
+  check(
+    '第2步最小针间净距 = 20（相对停驻针 #1）',
+    approx(r.steps[1].minClearance, 20) && r.steps[1].minClearanceParked === 0
+  );
+
+  // 净距等于限值不得放行：限值取 10 时第1步起始姿态即为 10
+  r = Sweep.checkStepwise(sw, far, { order: [0, 1], minNeedleClearance: 10 });
+  check('净距等于限值判为越界', !r.needleSafe && !r.safe);
+  check(
+    '等距越界在第1步起始位置',
+    r.firstNeedleConflict.step === 0 &&
+      r.firstNeedleConflict.parked === 1 &&
+      approx(r.firstNeedleConflict.offsetDeg, 0)
+  );
+
+  // 中段越界：起止姿态净距均为 15，扫掠中段降至 5；限值 6 时端点检查无法发现
+  const mid = [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 180, dir: 'ccw' },
+    { x: 0, y: 20, len: 5, a0: 270, a1: 0, dir: 'ccw' },
+  ];
+  r = Sweep.checkStepwise(mid, far, { order: [0, 1], minNeedleClearance: 6 });
+  const expectDeg = (Math.asin(289 / 300) * 180) / Math.PI;
+  check('中段越界被检出（非仅起止姿态）', !r.needleSafe);
+  check(
+    '首次越界角 = asin(289/300)（连续精确解，非采样）',
+    r.firstNeedleConflict && approx(r.firstNeedleConflict.angleDeg, expectDeg, 1e-6)
+  );
+  check(
+    '越界发生在扫掠中段',
+    r.firstNeedleConflict.offsetDeg > 1 && r.firstNeedleConflict.offsetDeg < 179
+  );
+  check('第1步最小针间净距 = 5', approx(r.steps[0].minClearance, 5) && r.steps[0].minClearanceParked === 1);
+
+  // 同一几何调整执行顺序后安全
+  r = Sweep.checkStepwise(mid, far, { order: [1, 0], minNeedleClearance: 6 });
+  check('调整执行顺序后针间安全', r.needleSafe);
+  check(
+    '换序后逐步净距为 15 与 10',
+    approx(r.steps[0].minClearance, 15) &&
+      r.steps[0].minClearanceParked === 0 &&
+      approx(r.steps[1].minClearance, 10) &&
+      r.steps[1].minClearanceParked === 1
+  );
+}
+
+console.log('== 分步注胶：首项风险排序 ==');
+{
+  const far = [{ x: 500, y: 500, r: 5 }];
+  // 针2、针3 的停驻姿态分别在针1扫掠约 50°、26° 处越界；
+  // 执行顺序 [针3, 针1, 针2]：第1步（针3）安全，第2步（针1）对两根停驻针均越界
+  const trio = [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 90, dir: 'ccw' },
+    { x: 5.4, y: 8.66, len: 2, a0: 0, a1: 90, dir: 'ccw' },
+    { x: 8.66, y: 5.4, len: 2, a0: 90, a1: 180, dir: 'ccw' },
+  ];
+  const r = Sweep.checkStepwise(trio, far, { order: [2, 0, 1], minNeedleClearance: 1 });
+  check('第1步（针3先注胶）安全', r.steps[0].safe);
+  check(
+    '第1步最小净距 = hypot(1.26,3.26)-2（相对停驻针 #2）',
+    approx(r.steps[0].minClearance, Math.hypot(1.26, 3.26) - 2) && r.steps[0].minClearanceParked === 1
+  );
+  check('第2步（针1注胶）存在风险', !r.steps[1].safe);
+  const p1 = r.steps[1].pairs.find((p) => p.parked === 1);
+  const p2 = r.steps[1].pairs.find((p) => p.parked === 2);
+  check('第2步两根停驻针均越界', !!(p1.firstViolation && p2.firstViolation));
+  check(
+    '停驻针 #3 的越界角早于停驻针 #2',
+    p2.firstViolation.offsetDeg < p1.firstViolation.offsetDeg
+  );
+  check(
+    '首项风险按执行步骤、再按停驻针录入顺序取针 #2（而非角度更早的针 #3）',
+    r.firstNeedleConflict.step === 1 && r.firstNeedleConflict.active === 0 && r.firstNeedleConflict.parked === 1
+  );
+}
+
 if (failures > 0) {
   console.error(`\n${failures} 项测试失败`);
   process.exit(1);
