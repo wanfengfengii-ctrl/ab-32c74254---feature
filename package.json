@@ -1,0 +1,12 @@
+{
+  "name": "mural-sweep-check",
+  "version": "1.0.0",
+  "private": true,
+  "description": "壁画修复注胶针扫掠安全校核（纯前端，本机计算）",
+  "scripts": {
+    "test": "node tests/sweep.test.js",
+    "build": "node scripts/build.js",
+    "smoke": "node scripts/smoke.js",
+    "verify": "node scripts/verify.js"
+  }
+}

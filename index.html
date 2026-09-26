@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>壁画修复 · 注胶针扫掠安全校核</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>壁画修复注胶 · 长针扫掠安全校核</h1>
+    <p>录入或拖动 2–5 根针与 1–6 个颜料保护圆，点击「校核」后仅在本机浏览器内完成全部几何计算，数据不会离开本机。</p>
+  </header>
+  <main>
+    <section id="panel">
+      <div class="panel-block">
+        <h2>注胶针（2–5 根）</h2>
+        <div id="needle-forms"></div>
+        <button type="button" id="add-needle">＋ 添加针</button>
+      </div>
+      <div class="panel-block">
+        <h2>颜料保护圆（1–6 个）</h2>
+        <div id="circle-forms"></div>
+        <button type="button" id="add-circle">＋ 添加保护圆</button>
+      </div>
+      <div class="panel-block actions">
+        <button type="button" id="check" class="primary">校核</button>
+        <button type="button" id="reset">重置</button>
+      </div>
+      <div id="errors" class="errors" role="alert"></div>
+      <div id="results" aria-live="polite"></div>
+    </section>
+    <section id="canvas-wrap">
+      <canvas id="cv" width="760" height="560"></canvas>
+      <p class="hint">
+        可直接拖动：支点（圆点）、针尖手柄（改变角度与针长）、圆心、圆周（改变半径）。<br>
+        坐标原点在画布左下角，y 轴向上；角度以正东为 0°、逆时针为正。蓝色扇形为针身扫掠区域，红色为风险。
+      </p>
+    </section>
+  </main>
+  <script src="js/sweep.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

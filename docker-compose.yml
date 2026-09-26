@@ -1,0 +1,23 @@
+# 壁画修复注胶扫掠校核：web 为静态站点，verify 为一次性校验服务
+services:
+  web:
+    build: .
+    image: mural-sweep-web:latest
+    ports:
+      # 宿主机端口由 WEB_PORT 环境变量配置，默认 8080
+      - "${WEB_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # 一次性服务：完成代码测试、构建及注胶扫掠模块烟测后自行退出，以退出码报告结果
+  verify:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+    command: ["node", "scripts/verify.js"]
