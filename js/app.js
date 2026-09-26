@@ -22,6 +22,8 @@
       { x: 580, y: 160, len: 130, a0: 165, a1: 95, dir: 'cw' },
     ],
     circles: [{ x: 380, y: 330, r: 45 }],
+    // 分步注胶：启用开关、最小针间净距限值、执行顺序（针索引的排列）
+    seq: { enabled: false, clearance: 5, order: [0, 1] },
     result: null,
   });
 
@@ -92,6 +94,8 @@
       del.addEventListener('click', () => {
         if (state.needles.length <= 2) return;
         state.needles.splice(i, 1);
+        // 删除针后重映射执行顺序，保持其余针的先后关系
+        state.seq.order = state.seq.order.filter((x) => x !== i).map((x) => (x > i ? x - 1 : x));
         state.result = null;
         renderForms();
         draw();
@@ -140,6 +144,73 @@
 
     $('add-needle').disabled = state.needles.length >= 5;
     $('add-circle').disabled = state.circles.length >= 6;
+    renderSeqPanel();
+  }
+
+  /* ---------------- 分步注胶：执行顺序面板 ---------------- */
+
+  function moveSeqStep(from, to) {
+    const order = state.seq.order;
+    if (from === to || from < 0 || to < 0 || from >= order.length || to >= order.length) return;
+    const [item] = order.splice(from, 1);
+    order.splice(to, 0, item);
+    state.result = null; // 顺序修改作废旧结果
+    renderSeqPanel();
+    draw();
+  }
+
+  function renderSeqPanel() {
+    $('seq-enable').checked = state.seq.enabled;
+    $('seq-panel').hidden = !state.seq.enabled;
+    $('seq-clearance').value = state.seq.clearance;
+    const list = $('seq-order');
+    list.innerHTML = '';
+    state.seq.order.forEach((ni, k) => {
+      const li = document.createElement('li');
+      li.draggable = true;
+      li.dataset.pos = k;
+      const no = document.createElement('span');
+      no.className = 'step-no';
+      no.textContent = `第 ${k + 1} 步`;
+      const name = document.createElement('span');
+      name.textContent = `针 #${ni + 1}`;
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'mv';
+      up.textContent = '▲';
+      up.disabled = k === 0;
+      up.addEventListener('click', () => moveSeqStep(k, k - 1));
+      const down = document.createElement('button');
+      down.type = 'button';
+      down.className = 'mv';
+      down.textContent = '▼';
+      down.disabled = k === state.seq.order.length - 1;
+      down.addEventListener('click', () => moveSeqStep(k, k + 1));
+      li.append(no, name, up, down);
+      // 拖动排定执行顺序
+      li.addEventListener('dragstart', (e) => {
+        li.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(k));
+      });
+      li.addEventListener('dragend', () => {
+        li.classList.remove('dragging');
+        list.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+      });
+      li.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        li.classList.add('drag-over');
+      });
+      li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+      li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        li.classList.remove('drag-over');
+        const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        if (Number.isInteger(from)) moveSeqStep(from, k);
+      });
+      list.appendChild(li);
+    });
   }
 
   // 拖动后把状态写回表单
@@ -294,15 +365,64 @@
     ctx.fillText(`C${j + 1}`, c.x + 7, cy(c.y) - 7);
   }
 
+  // 每根针的绘制信息：旧模式取 checkAll 结果，分步模式取该针所在步骤的越界/圆结论
+  function needleDrawInfo(i) {
+    const res = state.result;
+    if (!res) return null;
+    if (res.mode !== 'sequential') return res.results[i];
+    const st = res.steps.find((s) => s.needle === i);
+    const cr = res.circle.results[i];
+    if (st && st.firstViolation) {
+      return { safe: false, firstTouch: { angleDeg: st.firstViolation.angleDeg, circle: null } };
+    }
+    return cr;
+  }
+
+  // 执行顺序角标（启用分步注胶时）
+  function drawSeqBadges() {
+    state.seq.order.forEach((ni, k) => {
+      const n = state.needles[ni];
+      ctx.beginPath();
+      ctx.arc(n.x - 11, cy(n.y) + 17, 9, 0, TAU);
+      ctx.fillStyle = '#1f77b4';
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(k + 1), n.x - 11, cy(n.y) + 17);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    });
+  }
+
+  // 首项风险叠加：高亮该步停驻针的实际停驻姿态（已完成→注入角，未执行→起始角）
+  function drawSeqRisk(res) {
+    const f = res.firstRisk;
+    const stepOf = new Array(state.needles.length).fill(-1);
+    res.order.forEach((ni, k) => {
+      stepOf[ni] = k;
+    });
+    const pn = state.needles[f.parkedNeedle];
+    const parkedDeg = stepOf[f.parkedNeedle] < f.step ? pn.a1 : pn.a0;
+    const pa = (parkedDeg * Math.PI) / 180;
+    ctx.beginPath();
+    ctx.moveTo(pn.x, cy(pn.y));
+    ctx.lineTo(pn.x + pn.len * Math.cos(pa), cy(pn.y + pn.len * Math.sin(pa)));
+    ctx.strokeStyle = '#d40f22';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+  }
+
   function draw() {
     ctx.clearRect(0, 0, W, H);
     drawGrid();
     const res = state.result;
-    state.needles.forEach((n, i) => drawNeedle(n, i, res ? res.results[i] : null));
-    state.circles.forEach((c, j) => {
-      const inConflict = !!(res && res.firstConflict && res.firstConflict.circle === j);
-      drawCircle(c, j, inConflict);
-    });
+    state.needles.forEach((n, i) => drawNeedle(n, i, needleDrawInfo(i)));
+    const fc = res ? (res.mode === 'sequential' ? res.circle.firstConflict : res.firstConflict) : null;
+    state.circles.forEach((c, j) => drawCircle(c, j, !!(fc && fc.circle === j)));
+    if (state.seq.enabled) drawSeqBadges();
+    if (res && res.mode === 'sequential' && res.firstRisk) drawSeqRisk(res);
   }
 
   /* ---------------- 拖动 ---------------- */
@@ -397,6 +517,10 @@
     const res = state.result;
     box.innerHTML = '';
     if (!res) return;
+    if (res.mode === 'sequential') {
+      renderSeqResults(box, res);
+      return;
+    }
     const summary = document.createElement('div');
     if (res.safe) {
       summary.className = 'ok';
@@ -427,6 +551,60 @@
     });
   }
 
+  // 分步注胶结果：首项风险（按执行步骤、再按停驻针录入顺序）+ 逐步明细
+  function renderSeqResults(box, res) {
+    const summary = document.createElement('div');
+    if (res.safe) {
+      summary.className = 'ok';
+      summary.textContent = '✅ 分步校核通过：各步扫掠与保护圆、停驻针身均保持安全净距。';
+    } else {
+      summary.className = 'bad';
+      if (res.firstRisk) {
+        const f = res.firstRisk;
+        summary.textContent =
+          `⚠️ 首项风险：第 ${f.step + 1} 步，针 #${f.needle + 1} 旋转至 ${f.angleDeg.toFixed(2)}° 时，` +
+          `与停驻针 #${f.parkedNeedle + 1} 的针间净距越限（限值 ${res.minNeedleClearance}）。`;
+      } else {
+        const f = res.circle.firstConflict;
+        summary.textContent =
+          `⚠️ 首项冲突：针 #${f.needle + 1} 旋转至 ${f.angleDeg.toFixed(2)}° 时` +
+          `首次触及保护圆 #${f.circle + 1}。`;
+      }
+    }
+    box.appendChild(summary);
+    // 针间越界与颜料圆冲突并存时，补充颜料圆冲突提示
+    if (res.firstRisk && res.circle.firstConflict) {
+      const f = res.circle.firstConflict;
+      const extra = document.createElement('div');
+      extra.className = 'bad item';
+      extra.textContent =
+        `另有颜料圆冲突：针 #${f.needle + 1} 旋转至 ${f.angleDeg.toFixed(2)}° 时` +
+        `首次触及保护圆 #${f.circle + 1}。`;
+      box.appendChild(extra);
+    }
+    res.steps.forEach((s) => {
+      const cr = res.circle.results[s.needle];
+      const parts = [];
+      if (s.firstViolation) {
+        parts.push(
+          `与停驻针 #${s.firstViolation.parkedNeedle + 1} 首次越界于 ${s.firstViolation.angleDeg.toFixed(2)}°` +
+          `（限值 ${res.minNeedleClearance}）`
+        );
+      } else {
+        parts.push(`最小针间净距 ${s.minClearance.toFixed(2)}（相对针 #${s.minClearanceNeedle + 1}）`);
+      }
+      if (cr.safe) {
+        parts.push(`颜料圆净距 ${cr.minClearance.toFixed(2)}（相对保护圆 #${cr.minClearanceCircle + 1}）`);
+      } else {
+        parts.push(`首次触及保护圆 #${cr.firstTouch.circle + 1} 于 ${cr.firstTouch.angleDeg.toFixed(2)}°`);
+      }
+      const line = document.createElement('div');
+      line.className = s.safe ? 'ok item' : 'bad item';
+      line.textContent = `第 ${s.step + 1} 步 · 针 #${s.needle + 1}：` + parts.join('；');
+      box.appendChild(line);
+    });
+  }
+
   /* ---------------- 事件绑定 ---------------- */
 
   $('add-needle').addEventListener('click', () => {
@@ -439,6 +617,7 @@
       a1: 80,
       dir: 'ccw',
     });
+    state.seq.order.push(state.needles.length - 1); // 新针排在执行顺序末尾
     state.result = null;
     renderForms();
     draw();
@@ -457,7 +636,12 @@
   });
 
   $('check').addEventListener('click', () => {
-    const errors = window.Sweep.validate(state.needles, state.circles);
+    let errors = window.Sweep.validate(state.needles, state.circles);
+    if (state.seq.enabled) {
+      errors = errors.concat(
+        window.Sweep.validateSequential(state.needles, state.seq.order, state.seq.clearance)
+      );
+    }
     showErrors(errors);
     if (errors.length) {
       state.result = null;
@@ -465,8 +649,25 @@
       draw();
       return;
     }
-    state.result = window.Sweep.checkAll(state.needles, state.circles);
+    // 未启用分步注胶时沿用既有保护圆校核；启用后追加针间净距连续校核
+    state.result = state.seq.enabled
+      ? window.Sweep.checkSequential(state.needles, state.circles, state.seq.order, state.seq.clearance)
+      : window.Sweep.checkAll(state.needles, state.circles);
     renderResults();
+    draw();
+  });
+
+  // 分步注胶：开关、净距限值修改均作废旧结果
+  $('seq-enable').addEventListener('change', (e) => {
+    state.seq.enabled = e.target.checked;
+    state.result = null;
+    $('results').innerHTML = '';
+    renderSeqPanel();
+    draw();
+  });
+  $('seq-clearance').addEventListener('input', (e) => {
+    state.seq.clearance = parseFloat(e.target.value);
+    state.result = null;
     draw();
   });
 

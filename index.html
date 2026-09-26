@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>壁画修复注胶 · 长针扫掠安全校核</h1>
-    <p>录入或拖动 2–5 根针与 1–6 个颜料保护圆，点击「校核」后仅在本机浏览器内完成全部几何计算，数据不会离开本机。</p>
+    <p>录入或拖动 2–5 根针与 1–6 个颜料保护圆，点击「校核」后仅在本机浏览器内完成全部几何计算，数据不会离开本机。可启用「分步注胶」拖动排定执行顺序，连续校核活动针与停驻针身的针间净距。</p>
   </header>
   <main>
     <section id="panel">
@@ -22,6 +22,17 @@
         <h2>颜料保护圆（1–6 个）</h2>
         <div id="circle-forms"></div>
         <button type="button" id="add-circle">＋ 添加保护圆</button>
+      </div>
+      <div class="panel-block">
+        <h2>分步注胶</h2>
+        <label class="seq-toggle"><input type="checkbox" id="seq-enable"> 启用分步注胶</label>
+        <div id="seq-panel" hidden>
+          <label class="seq-clearance">最小针间净距
+            <input type="number" id="seq-clearance" step="any" min="0" value="5">
+          </label>
+          <p class="hint">拖动排定执行顺序（2–5 根针）。每一步仅该针从起始角转至注入角：已完成针停在注入角，未执行针保持起始角。除颜料圆外，活动针身与任一停驻针身的距离必须始终大于最小针间净距。</p>
+          <ol id="seq-order"></ol>
+        </div>
       </div>
       <div class="panel-block actions">
         <button type="button" id="check" class="primary">校核</button>

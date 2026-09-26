@@ -163,6 +163,143 @@ console.log('== 首项冲突排序 ==');
   check('同针多圆取最早触及（起始角）', r.results[0].firstTouch.circle === 1 && approx(r.results[0].firstTouch.offsetDeg, 0));
 }
 
+console.log('== 分步注胶：录入校验 ==');
+{
+  const needles = [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 90, dir: 'ccw' },
+    { x: 100, y: 0, len: 10, a0: 0, a1: 90, dir: 'ccw' },
+  ];
+  check('合法顺序与净距无错误', Sweep.validateSequential(needles, [0, 1], 5).length === 0);
+  check('净距为 0 合法', Sweep.validateSequential(needles, [0, 1], 0).length === 0);
+  check('负净距被拒', Sweep.validateSequential(needles, [0, 1], -1).length > 0);
+  check('非数值净距被拒', Sweep.validateSequential(needles, [0, 1], NaN).length > 0);
+  check('顺序缺针被拒', Sweep.validateSequential(needles, [0], 5).length > 0);
+  check('顺序重复被拒', Sweep.validateSequential(needles, [1, 1], 5).length > 0);
+  check('顺序越界被拒', Sweep.validateSequential(needles, [0, 2], 5).length > 0);
+}
+
+console.log('== 分步注胶：连续首次越界 ==');
+{
+  const far = [{ x: 500, y: 500, r: 1 }];
+  // 针1：支点原点，长 10，0° -> 180° 逆时针；针2 停驻于 (0,12)->(0,8)
+  // 起止姿态净距均为 8（安全），仅扫掠中段穿过停驻线段：连续校核必须捕获
+  const mk = () => [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 180, dir: 'ccw' },
+    { x: 0, y: 12, len: 4, a0: 270, a1: 90, dir: 'ccw' },
+  ];
+  const expectDeg = 90 - (Math.asin(1 / 8) * 180) / Math.PI; // ≈ 82.8192°
+
+  let r = Sweep.checkSequential(mk(), far, [0, 1], 1);
+  check('仅中段越界也被捕获（非起止姿态比较）', !r.safe && r.firstRisk !== null);
+  check(
+    '首项风险定位：第 1 步、针1、停驻针2',
+    r.firstRisk.step === 0 && r.firstRisk.needle === 0 && r.firstRisk.parkedNeedle === 1
+  );
+  check('首次越界角 = 90° - asin(1/8)', approx(r.firstRisk.angleDeg, expectDeg, 1e-6));
+  check('越界偏移量同步给出', approx(r.firstRisk.offsetDeg, expectDeg, 1e-6));
+  check('该步最小针间净距为 0（相交）', approx(r.steps[0].minClearance, 0, 1e-9));
+
+  // 接触即越界：限值 0 时，针身在 90° 与停驻线段相交
+  r = Sweep.checkSequential(mk(), far, [0, 1], 0);
+  check('端点接触不得放行（限值 0 仍判越界）', !r.safe && r.firstRisk !== null);
+  check('接触越界角 = 90°', approx(r.firstRisk.angleDeg, 90, 1e-6));
+}
+
+console.log('== 分步注胶：停驻姿态与执行顺序 ==');
+{
+  const far = [{ x: 500, y: 500, r: 1 }];
+  // 针2：起始角 90°（停上方，安全），注入角 270°（停下方，伸入针1扫掠路径）
+  const mk = () => [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 180, dir: 'ccw' },
+    { x: 0, y: 12, len: 4, a0: 90, a1: 270, dir: 'ccw' },
+  ];
+  const expectDeg = 90 - (Math.asin(1 / 8) * 180) / Math.PI;
+
+  let r = Sweep.checkSequential(mk(), far, [0, 1], 1);
+  check('顺序 [1,2] 安全', r.safe && r.firstRisk === null);
+  check('安全时给出第 1 步最小针间净距及针号', approx(r.steps[0].minClearance, 2, 1e-9) && r.steps[0].minClearanceNeedle === 1);
+  check('安全时给出第 2 步最小针间净距及针号', approx(r.steps[1].minClearance, 8, 1e-9) && r.steps[1].minClearanceNeedle === 0);
+
+  r = Sweep.checkSequential(mk(), far, [1, 0], 1);
+  check('顺序 [2,1] 时已完成针停在注入角引发越界', !r.safe);
+  check(
+    '首项风险定位：第 2 步、针1、停驻针2',
+    r.firstRisk.step === 1 && r.firstRisk.needle === 0 && r.firstRisk.parkedNeedle === 1
+  );
+  check('越界角 = 90° - asin(1/8)', approx(r.firstRisk.angleDeg, expectDeg, 1e-6));
+
+  // 等于限值不得放行：顺序 [1,2] 第 1 步最小净距恰为 2
+  r = Sweep.checkSequential(mk(), far, [0, 1], 2);
+  check('净距等于限值判越界', !r.safe && r.firstRisk.step === 0);
+  r = Sweep.checkSequential(mk(), far, [0, 1], 1.9999);
+  check('净距略大于限值放行', r.safe);
+}
+
+console.log('== 分步注胶：首项风险稳定排序 ==');
+{
+  const far = [{ x: 500, y: 500, r: 1 }];
+  // 针3 扫掠会先后触及停驻针2（约 38.09°）与停驻针1（约 82.82°），
+  // 首项风险须按停驻针录入顺序取针1，而非按越界角早晚取针2
+  const needles = [
+    { x: 0, y: 12, len: 4, a0: 270, a1: 90, dir: 'ccw' },
+    { x: 8, y: 8, len: 3, a0: 225, a1: 45, dir: 'ccw' },
+    { x: 0, y: 0, len: 10, a0: 0, a1: 180, dir: 'ccw' },
+  ];
+  const r = Sweep.checkSequential(needles, far, [2, 0, 1], 1);
+  check('首项风险按执行步骤定位（第 1 步、针3）', r.firstRisk.step === 0 && r.firstRisk.needle === 2);
+  check('同一步内按停驻针录入顺序取针1', r.firstRisk.parkedNeedle === 0);
+  check('首项风险角度为停驻针1的首次越界角', approx(r.firstRisk.angleDeg, 90 - (Math.asin(1 / 8) * 180) / Math.PI, 1e-6));
+  check(
+    '该步越界列表按停驻针录入顺序排列',
+    r.steps[0].violations.length === 2 &&
+      r.steps[0].violations[0].parkedNeedle === 0 &&
+      r.steps[0].violations[1].parkedNeedle === 1
+  );
+  const dParked = Math.hypot(8 - 3 * Math.SQRT1_2, 8 - 3 * Math.SQRT1_2);
+  check(
+    '停驻针2越界角更早（约 38.09°）但首项仍取针1',
+    approx(r.steps[0].violations[1].angleDeg, 45 - (Math.asin(1 / dParked) * 180) / Math.PI, 1e-6) &&
+      r.steps[0].violations[1].angleDeg < r.steps[0].violations[0].angleDeg
+  );
+}
+
+console.log('== 分步注胶：针尖掠过胶囊直边 ==');
+{
+  const far = [{ x: 500, y: 500, r: 1 }];
+  // 针1：支点 (60,70)，长 50，90° -> 180° 逆时针；针2 停驻于 (0,0)->(0,100)
+  // 越界区间由针尖圆与偏移线 x=15 的交点决定：180° - acos(45/50)
+  const needles = [
+    { x: 60, y: 70, len: 50, a0: 90, a1: 180, dir: 'ccw' },
+    { x: 0, y: 0, len: 100, a0: 90, a1: 180, dir: 'ccw' },
+  ];
+  const expectDeg = 180 - (Math.acos(45 / 50) * 180) / Math.PI; // ≈ 154.158°
+  const r = Sweep.checkSequential(needles, far, [0, 1], 15);
+  check('针尖越界：首次越界角 = 180° - acos(0.9)', approx(r.firstRisk.angleDeg, expectDeg, 1e-6));
+  check('越界偏移量 = 越界角 - 起始角', approx(r.firstRisk.offsetDeg, expectDeg - 90, 1e-6));
+  check('该步最小针间净距 = 10', approx(r.steps[0].minClearance, 10, 1e-9));
+}
+
+console.log('== 分步注胶：颜料圆结论保留 ==');
+{
+  // 针间安全但颜料圆有风险：整体不安全，首项风险（针间）为空，圆冲突仍在
+  const needles = [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 180, dir: 'ccw' },
+    { x: 0, y: 12, len: 4, a0: 90, a1: 270, dir: 'ccw' },
+  ];
+  const r = Sweep.checkSequential(needles, [{ x: 0, y: 5, r: 3 }], [0, 1], 1);
+  check('针间无越界', r.firstRisk === null);
+  check('颜料圆冲突保留（针1 触及圆1）', r.circle.firstConflict && r.circle.firstConflict.needle === 0 && r.circle.firstConflict.circle === 0);
+  check('整体判为不安全', !r.safe);
+
+  // 旧草稿（未启用分步注胶）：checkAll 不做针间校核，交叉针也照常放行
+  const crossing = [
+    { x: 0, y: 0, len: 10, a0: 0, a1: 180, dir: 'ccw' },
+    { x: 0, y: 12, len: 4, a0: 270, a1: 90, dir: 'ccw' },
+  ];
+  const legacy = Sweep.checkAll(crossing, [{ x: 500, y: 500, r: 1 }]);
+  check('旧路径不做针间校核', legacy.safe && legacy.firstConflict === null);
+}
+
 if (failures > 0) {
   console.error(`\n${failures} 项测试失败`);
   process.exit(1);
